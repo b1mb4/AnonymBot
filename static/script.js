@@ -19,6 +19,17 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Завантаження повідомлень
     updateMessages();
+
+    // Додаємо анімацію кнопці оновлення
+    const refreshBtn = document.getElementById('refresh-btn');
+    if (refreshBtn) {
+        refreshBtn.addEventListener('click', function() {
+            this.classList.add('refreshing');
+            setTimeout(() => {
+                this.classList.remove('refreshing');
+            }, 1000);
+        });
+    }
 });
 
 // Застосування теми Telegram
@@ -37,11 +48,52 @@ function applyTelegramTheme() {
     }
 }
 
+// Форматування дати
+function formatDate(dateString) {
+    if (!dateString) return '';
+
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) return '';
+
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+
+    // Форматування часу (години:хвилини)
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    const timeString = `${hours}:${minutes}`;
+
+    // Якщо сьогодні
+    if (date >= today) {
+        return `Сьогодні, ${timeString}`;
+    }
+
+    // Якщо вчора
+    if (date >= yesterday) {
+        return `Вчора, ${timeString}`;
+    }
+
+    // Інакше повна дата
+    const day = String(date.getDate()).padStart(2, '0');
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const year = date.getFullYear();
+
+    return `${day}.${month}.${year}, ${timeString}`;
+}
+
 // Оновлення повідомлень
 function updateMessages() {
     const messagesContainer = document.getElementById('messages-container');
     const filterSelect = document.getElementById('filter');
     const limit = filterSelect ? filterSelect.value : 10;
+
+    // Додаємо клас animation до кнопки оновлення
+    const refreshBtn = document.getElementById('refresh-btn');
+    if (refreshBtn) {
+        refreshBtn.innerHTML = '🔄 Оновлюється...';
+    }
 
     // Показати індикатор завантаження
     messagesContainer.innerHTML = '<div class="loading">Завантаження...</div>';
@@ -76,8 +128,32 @@ function updateMessages() {
                 messageText.textContent = message.text;
 
                 messageElement.appendChild(messageText);
+
+                // Додавання часу повідомлення, якщо доступно
+                if (message.timestamp) {
+                    const messageTime = document.createElement('div');
+                    messageTime.className = 'message-time';
+                    messageTime.textContent = formatDate(message.timestamp);
+                    messageElement.appendChild(messageTime);
+                }
+
                 messagesContainer.appendChild(messageElement);
             });
+
+            // Повертаємо текст кнопки
+            if (refreshBtn) {
+                refreshBtn.innerHTML = '🔄';
+            }
+
+            // Оновлюємо статус
+            const statusElement = document.querySelector('.status-message');
+            if (statusElement) {
+                const now = new Date();
+                const hours = String(now.getHours()).padStart(2, '0');
+                const minutes = String(now.getMinutes()).padStart(2, '0');
+                const seconds = String(now.getSeconds()).padStart(2, '0');
+                statusElement.textContent = `Оновлено о ${hours}:${minutes}:${seconds}`;
+            }
         })
         .catch(error => {
             console.error('Помилка:', error);
@@ -85,11 +161,16 @@ function updateMessages() {
                 <div class="error-message">
                     <p>Не вдалося завантажити повідомлення</p>
                     <p class="error-details">${error.message}</p>
-                    <button onclick="updateMessages()" class="retry-button">Спробувати ще раз</button>
+                    <button onclick="updateMessages()" class="refresh-button">Спробувати ще раз</button>
                 </div>
             `;
+
+            // Повертаємо текст кнопки
+            if (refreshBtn) {
+                refreshBtn.innerHTML = '🔄';
+            }
         });
 }
 
 // Додавання періодичного оновлення
-setInterval(updateMessages, 10000);
+setInterval(updateMessages, 30000); // Оновлюємо кожні 30 секунд замість 10

@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import aiohttp
-from aiogram import Bot, Dispatcher, types
+from aiogram import Bot, Dispatcher
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.filters import Command, CommandStart
 from aiogram.types import WebAppInfo
@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 TOKEN = "7830618724:AAFMhiP-DOV8fAs64Ecm3TUF-Xb-0zexJZI"
 
 # URL вашого додатку на Render
-WEBAPP_URL = "https://anonymbot-n1ms.onrender.com/"  # Замініть на ваш URL
+WEBAPP_URL = "https://anonymbot-n1ms.onrender.com"  # Замініть на ваш URL
 
 # URL для API-ендпоінту
 API_URL = f"{WEBAPP_URL}/bot/messages"
@@ -35,7 +35,7 @@ async def command_start(message: Message):
     """Обробник команди /start"""
     logger.info(f"Отримано команду /start від {message.from_user.id}")
     await message.answer(
-        "👋 Вітаю! Надішліть мені анонімне повідомлення, і я збережу його.\n\nВикористовуйте /read щоб переглянути повідомлення.")
+        "👋 Вітаю! Надішліть мені будь яку свою потребу, і я збережу її.\n\nВона обов'язково буде почута..")
 
 
 # Команда /read
@@ -51,7 +51,7 @@ async def command_read(message: Message):
             ]
         )
 
-        await message.answer("📩 Ось ваші анонімні повідомлення:", reply_markup=keyboard)
+        await message.answer("📩 Помолитися за потреби можна тут:", reply_markup=keyboard)
         logger.info("Кнопка WebApp надіслана успішно")
     except Exception as e:
         logger.error(f"Помилка при обробці команди /read: {e}")
