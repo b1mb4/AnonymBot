@@ -1,10 +1,22 @@
 services:
-  # Web сервіс
   - type: web
-    name: anonybot-web
+    name: anonymbot-web
     env: python
     buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn app:app --host 0.0.0.0 --port $PORT
+    startCommand: gunicorn -k uvicorn.workers.UvicornWorker app:app
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.4
+      - key: API_KEY
+        value: AKe5Df9cB7zX2pQr8tYw3mVn6uJh4gLs
+
+  - type: worker
+    name: anonymbot-bot
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python main.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.4
+      - key: API_KEY
+        value: AKe5Df9cB7zX2pQr8tYw3mVn6uJh4gLs
