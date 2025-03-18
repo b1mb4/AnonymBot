@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Анонімні повідомлення</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="/static/script.js"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📩 Анонімні повідомлення</h1>
+            <p class="description">Тут ви можете переглянути анонімні повідомлення, відправлені через бота.</p>
+        </header>
+
+        <div class="filter-container">
+            <label for="filter">Показати: </label>
+            <select id="filter" onchange="updateMessages()">
+                <option value="5">Останні 5</option>
+                <option value="10" selected>Останні 10</option>
+                <option value="20">Останні 20</option>
+                <option value="50">Останні 50</option>
+            </select>
+            <button id="refresh-btn" onclick="updateMessages()" class="refresh-button">🔄 Оновити</button>
+        </div>
+
+        <div id="messages-container">
+            <div class="loading">Завантаження...</div>
+        </div>
+
+        <div class="status-message">
+            <!-- Тут буде відображатися статус завантаження -->
+        </div>
+    </div>
+</body>
+</html>
