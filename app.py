@@ -1,12 +1,11 @@
 import os
+import sqlite3
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 import logging
 from fastapi.middleware.cors import CORSMiddleware
-import psycopg2
-from psycopg2.extras import RealDictCursor
 
 # Налаштування логування
 logging.basicConfig(level=logging.INFO)
@@ -37,18 +36,10 @@ templates = Jinja2Templates(directory="templates")
 
 # Функція для підключення до бази даних
 def get_db_connection():
-    # Для локального тестування можна використовувати SQLite
-    if os.environ.get("DATABASE_URL") is None:
-        import sqlite3
-        conn = sqlite3.connect("messages.db", check_same_thread=False)
-        conn.row_factory = sqlite3.Row
-        return conn
-
-    # На Render використовуємо PostgreSQL
-    conn = psycopg2.connect(
-        os.environ.get("DATABASE_URL", ""),
-        cursor_factory=RealDictCursor
-    )
+    # Створюємо базу в тимчасовому каталозі, який доступний для запису на Render
+    db_path = os.path.join("/tmp", "messages.db")
+    conn = sqlite3.connect(db_path, check_same_thread=False)
+    conn.row_factory = sqlite3.Row
     return conn
 
 
@@ -57,30 +48,20 @@ def init_db():
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # Перевіряємо, чи працюємо з SQLite або PostgreSQL
-    if isinstance(conn, psycopg2.extensions.connection):
-        cursor.execute("""
-        CREATE TABLE IF NOT EXISTS messages (
-            id SERIAL PRIMARY KEY,
-            text TEXT NOT NULL
-        )
-        """)
-    else:
-        cursor.execute("""
-        CREATE TABLE IF NOT EXISTS messages (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            text TEXT NOT NULL
-        )
-        """)
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        text TEXT NOT NULL
+    )
+    """)
 
     conn.commit()
 
     # Додаємо тестові дані, якщо база порожня
     cursor.execute("SELECT COUNT(*) FROM messages")
-    count = cursor.fetchone()
-    count_value = count["count"] if isinstance(count, dict) else count[0]
+    count = cursor.fetchone()[0]
 
-    if count_value == 0:
+    if count == 0:
         test_messages = [
             "Привіт! Це перше анонімне повідомлення.",
             "Мені дуже подобається цей бот!",
@@ -90,10 +71,7 @@ def init_db():
         ]
 
         for msg in test_messages:
-            if isinstance(conn, psycopg2.extensions.connection):
-                cursor.execute("INSERT INTO messages (text) VALUES (%s)", (msg,))
-            else:
-                cursor.execute("INSERT INTO messages (text) VALUES (?)", (msg,))
+            cursor.execute("INSERT INTO messages (text) VALUES (?)", (msg,))
 
         conn.commit()
         logger.info(f"Додано {len(test_messages)} тестових повідомлень")
@@ -122,12 +100,8 @@ def get_messages(limit: int = 10):
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        if isinstance(conn, psycopg2.extensions.connection):
-            cursor.execute("SELECT text FROM messages ORDER BY id DESC LIMIT %s", (limit,))
-            messages = [{"text": row["text"]} for row in cursor.fetchall()]
-        else:
-            cursor.execute("SELECT text FROM messages ORDER BY id DESC LIMIT ?", (limit,))
-            messages = [{"text": row[0]} for row in cursor.fetchall()]
+        cursor.execute("SELECT text FROM messages ORDER BY id DESC LIMIT ?", (limit,))
+        messages = [{"text": row["text"]} for row in cursor.fetchall()]
 
         cursor.close()
         conn.close()
@@ -150,10 +124,7 @@ async def add_message(message: dict):
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        if isinstance(conn, psycopg2.extensions.connection):
-            cursor.execute("INSERT INTO messages (text) VALUES (%s)", (text,))
-        else:
-            cursor.execute("INSERT INTO messages (text) VALUES (?)", (text,))
+        cursor.execute("INSERT INTO messages (text) VALUES (?)", (text,))
 
         conn.commit()
         cursor.close()
