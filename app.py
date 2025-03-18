@@ -17,9 +17,7 @@ logger = logging.getLogger(__name__)
 os.makedirs("static", exist_ok=True)
 os.makedirs("templates", exist_ok=True)
 
-# API ключ для безпеки
-# В реальному додатку це має бути змінна середовища
-API_KEY = os.environ.get("API_KEY", "your-secret-api-key")
+API_KEY = os.environ.get("API_KEY", "AKe5Df9cB7zX2pQr8tYw3mVn6uJh4gLs")
 
 # Ініціалізація FastAPI
 app = FastAPI()

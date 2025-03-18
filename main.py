@@ -14,13 +14,13 @@ logger = logging.getLogger(__name__)
 TOKEN = "7830618724:AAFMhiP-DOV8fAs64Ecm3TUF-Xb-0zexJZI"
 
 # URL вашого додатку на Render
-WEBAPP_URL = "https://your-app-name.onrender.com"  # Замініть на ваш URL
+WEBAPP_URL = "https://anonymbot-n1ms.onrender.com/"  # Замініть на ваш URL
 
 # URL для API-ендпоінту
 API_URL = f"{WEBAPP_URL}/bot/messages"
 
 # API-ключ для доступу до ендпоінту
-API_KEY = "your-secret-api-key"  # Замініть на той же ключ, що і в app.py
+API_KEY = "AKe5Df9cB7zX2pQr8tYw3mVn6uJh4gLs"  # Замініть на той же ключ, що і в app.py
 
 # Ініціалізація бота
 bot = Bot(token=TOKEN)
