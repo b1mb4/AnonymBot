@@ -1,7 +1,7 @@
-import sqlite3
 import asyncio
 import logging
-from aiogram import Bot, Dispatcher
+import aiohttp
+from aiogram import Bot, Dispatcher, types
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.filters import Command, CommandStart
 from aiogram.types import WebAppInfo
@@ -13,21 +13,14 @@ logger = logging.getLogger(__name__)
 # Токен бота
 TOKEN = "7830618724:AAFMhiP-DOV8fAs64Ecm3TUF-Xb-0zexJZI"
 
-# Підключення до бази
-conn = sqlite3.connect("messages.db", check_same_thread=False)
-cursor = conn.cursor()
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS messages (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    text TEXT NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-)
-""")
-conn.commit()
+# URL вашого додатку на Render
+WEBAPP_URL = "https://your-app-name.onrender.com"  # Замініть на ваш URL
 
-# Домен для WebApp
-# ВАЖЛИВО: Змініть цей URL на ваш реальний HTTPS-домен
-WEBAPP_URL = "https://your-domain.com"  # Змініть на адресу вашого хостингу
+# URL для API-ендпоінту
+API_URL = f"{WEBAPP_URL}/bot/messages"
+
+# API-ключ для доступу до ендпоінту
+API_KEY = "your-secret-api-key"  # Замініть на той же ключ, що і в app.py
 
 # Ініціалізація бота
 bot = Bot(token=TOKEN)
@@ -68,14 +61,36 @@ async def command_read(message: Message):
 # Хендлер для звичайних повідомлень (не команд)
 @dp.message()
 async def save_message(message: Message):
-    """Зберігає анонімне повідомлення в базу"""
+    """Зберігає анонімне повідомлення на сервер"""
     try:
-        logger.info(f"Отримано повідомлення від {message.from_user.id}: {message.text[:20]}...")
-        cursor.execute("INSERT INTO messages (text) VALUES (?)", (message.text,))
-        conn.commit()
-        await message.answer("✅ Ваше повідомлення збережено анонімно.")
+        user_id = str(message.from_user.id)
+        text = message.text
+
+        logger.info(f"Отримано повідомлення від {user_id}: {text[:20]}...")
+
+        # Відправляємо повідомлення на сервер через API
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                    API_URL,
+                    json={"text": text, "user_id": user_id},
+                    headers={"X-API-Key": API_KEY}
+            ) as response:
+
+                if response.status == 200:
+                    result = await response.json()
+                    if result.get("success"):
+                        await message.answer("✅ Ваше повідомлення збережено анонімно.")
+                        logger.info(f"Повідомлення успішно збережено, message_id: {result.get('message_id')}")
+                    else:
+                        error = result.get("error", "Невідома помилка")
+                        await message.answer(f"❌ Помилка при збереженні повідомлення: {error}")
+                        logger.error(f"Помилка від сервера: {error}")
+                else:
+                    await message.answer(f"❌ Сервер повернув помилку: {response.status}")
+                    logger.error(f"Сервер повернув статус {response.status}")
+
     except Exception as e:
-        logger.error(f"Помилка при збереженні повідомлення: {e}")
+        logger.error(f"Помилка при відправці повідомлення на сервер: {e}")
         await message.answer("❌ Виникла помилка при збереженні повідомлення.")
 
 

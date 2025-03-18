@@ -1,11 +1,13 @@
 import os
 import sqlite3
-from fastapi import FastAPI, Request
+import secrets
+from fastapi import FastAPI, Request, HTTPException, Header, Depends
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 import logging
 from fastapi.middleware.cors import CORSMiddleware
+from typing import Optional
 
 # Налаштування логування
 logging.basicConfig(level=logging.INFO)
@@ -14,6 +16,10 @@ logger = logging.getLogger(__name__)
 # Створення директорії для статичних файлів, якщо її немає
 os.makedirs("static", exist_ok=True)
 os.makedirs("templates", exist_ok=True)
+
+# API ключ для безпеки
+# В реальному додатку це має бути змінна середовища
+API_KEY = os.environ.get("API_KEY", "your-secret-api-key")
 
 # Ініціалізація FastAPI
 app = FastAPI()
@@ -34,6 +40,16 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
 
+# Функція для перевірки API ключа
+def verify_api_key(x_api_key: Optional[str] = Header(None)):
+    if x_api_key != API_KEY:
+        raise HTTPException(
+            status_code=401,
+            detail="Невірний API ключ"
+        )
+    return x_api_key
+
+
 # Функція для підключення до бази даних
 def get_db_connection():
     # Створюємо базу в тимчасовому каталозі, який доступний для запису на Render
@@ -51,7 +67,9 @@ def init_db():
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS messages (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        text TEXT NOT NULL
+        text TEXT NOT NULL,
+        user_id TEXT,
+        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
     )
     """)
 
@@ -100,8 +118,8 @@ def get_messages(limit: int = 10):
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        cursor.execute("SELECT text FROM messages ORDER BY id DESC LIMIT ?", (limit,))
-        messages = [{"text": row["text"]} for row in cursor.fetchall()]
+        cursor.execute("SELECT text, timestamp FROM messages ORDER BY id DESC LIMIT ?", (limit,))
+        messages = [{"text": row["text"], "timestamp": row["timestamp"]} for row in cursor.fetchall()]
 
         cursor.close()
         conn.close()
@@ -113,9 +131,35 @@ def get_messages(limit: int = 10):
         return {"error": str(e)}
 
 
+@app.post("/bot/messages")
+async def add_bot_message(message: dict, api_key: str = Depends(verify_api_key)):
+    """Ендпоінт для додавання повідомлень від бота (захищений API ключем)"""
+    try:
+        text = message.get("text", "")
+        user_id = message.get("user_id", "")
+
+        if not text:
+            return {"success": False, "error": "Порожнє повідомлення"}
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("INSERT INTO messages (text, user_id) VALUES (?, ?)", (text, user_id))
+
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        logger.info(f"Додано нове повідомлення від бота (user_id: {user_id})")
+        return {"success": True, "message_id": cursor.lastrowid}
+    except Exception as e:
+        logger.error(f"Помилка при додаванні повідомлення від бота: {e}")
+        return {"success": False, "error": str(e)}
+
+
 @app.post("/messages")
 async def add_message(message: dict):
-    """Додає нове повідомлення через API"""
+    """Додає нове повідомлення через API (для веб-інтерфейсу)"""
     try:
         text = message.get("text", "")
         if not text:
@@ -134,6 +178,12 @@ async def add_message(message: dict):
     except Exception as e:
         logger.error(f"Помилка при додаванні повідомлення: {e}")
         return {"success": False, "error": str(e)}
+
+
+# Ендпоінт для перевірки статусу
+@app.get("/health")
+def health_check():
+    return {"status": "ok", "version": "1.0"}
 
 
 # Для Render порт буде отримано з системних змінних
