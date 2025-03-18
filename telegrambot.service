@@ -1,0 +1,15 @@
+[Unit]
+Description=Telegram Bot Service
+After=network.target
+
+[Service]
+User=your_username
+WorkingDirectory=/path/to/your/bot
+ExecStart=/usr/bin/python3 /path/to/your/bot/run_bot.py
+Restart=always
+RestartSec=10
+Environment=PYTHONUNBUFFERED=1
+Environment=BOT_TOKEN=7830618724:AAFMhiP-DOV8fAs64Ecm3TUF-Xb-0zexJZI
+
+[Install]
+WantedBy=multi-user.target
