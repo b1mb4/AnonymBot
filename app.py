@@ -130,7 +130,7 @@ async def keep_alive():
                 # Спроба сконструювати URL з інформації про Render
                 render_service = os.environ.get("RENDER_SERVICE_NAME", "")
                 if render_service:
-                    ping_url = f"https://{render_service}.onrender.com"
+                    ping_url = f"https://anonymbot-n1ms.onrender.com/"
                     logger.info(f"Сконструйовано URL: {ping_url}")
 
             if not ping_url:
