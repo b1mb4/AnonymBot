@@ -109,23 +109,58 @@ except Exception as e:
     logger.error(f"Помилка при ініціалізації бази даних: {e}")
 
 
-# Функція для підтримки активності сервера
+# Функція для підтримки активності сервера з кращою обробкою помилок
 async def keep_alive():
     """Функція для підтримки активності сервера, запускається в фоні"""
+
+    # Завжди чекаємо 30 секунд після старту перед першим пінгом
+    # Це дає серверу час повністю запуститись
+    await asyncio.sleep(30)
+
+    # Виводимо інформацію про APP_URL для діагностики
+    logger.info(f"Keep-alive буде пінгувати URL: {APP_URL}")
+
     while True:
+        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
         try:
-            # Пінгуємо наш власний /health ендпоінт
-            async with aiohttp.ClientSession() as session:
-                ping_url = f"{APP_URL}/health"
+            # Якщо APP_URL не встановлено в режимі Render, спробуємо самостійно побудувати URL
+            ping_url = APP_URL
+            if not ping_url and "RENDER" in os.environ:
+                # Спроба сконструювати URL з інформації про Render
+                render_service = os.environ.get("RENDER_SERVICE_NAME", "")
+                if render_service:
+                    ping_url = f"https://{render_service}.onrender.com"
+                    logger.info(f"Сконструйовано URL: {ping_url}")
+
+            if not ping_url:
+                logger.warning(f"[{current_time}] Не вдалося визначити URL для пінгу. Пропускаю.")
+                await asyncio.sleep(600)  # 10 хвилин
+                continue
+
+            # Додаємо шлях /health до URL, якщо потрібно
+            if not ping_url.endswith("/health"):
+                ping_url = f"{ping_url.rstrip('/')}/health"
+
+            # Встановлюємо таймаут для запиту, щоб уникнути зависання
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session:
+                logger.info(f"[{current_time}] Пінгую: {ping_url}")
                 async with session.get(ping_url) as response:
-                    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     if response.status == 200:
-                        logger.info(f"[{current_time}] Ping успішний: {ping_url}, статус: {response.status}")
+                        logger.info(f"[{current_time}] Ping успішний: статус {response.status}")
                     else:
-                        logger.warning(f"[{current_time}] Ping невдалий: {ping_url}, статус: {response.status}")
+                        logger.warning(f"[{current_time}] Ping повернув статус: {response.status}")
+
+        except aiohttp.ClientConnectorError as e:
+            # Специфічна помилка з'єднання
+            logger.error(f"[{current_time}] Помилка з'єднання при пінгу: {str(e)}")
+        except aiohttp.ClientError as e:
+            # Загальні помилки клієнта
+            logger.error(f"[{current_time}] Помилка HTTP клієнта: {str(e)}")
+        except asyncio.TimeoutError:
+            logger.error(f"[{current_time}] Timeout при виконанні пінгу")
         except Exception as e:
-            current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            logger.error(f"[{current_time}] Помилка при виконанні ping: {str(e)}")
+            logger.error(f"[{current_time}] Непередбачена помилка: {str(e)}")
 
         # Чекаємо 10 хвилин перед наступним пінгом
         # Render зазвичай "засинає" після 15 хвилин неактивності
