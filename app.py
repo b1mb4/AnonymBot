@@ -109,61 +109,47 @@ except Exception as e:
     logger.error(f"Помилка при ініціалізації бази даних: {e}")
 
 
-# Функція для підтримки активності сервера з кращою обробкою помилок
+# Проста функція для підтримки активності сервера
 async def keep_alive():
-    """Функція для підтримки активності сервера, запускається в фоні"""
+    """
+    Функція для підтримки активності сервера, яка просто пише в лог кожні 10 хвилин
+    """
+    # Змінна для зберігання останнього стану повідомлень
+    last_message_count = None
 
-    # Завжди чекаємо 30 секунд після старту перед першим пінгом
-    # Це дає серверу час повністю запуститись
+    # Завжди чекаємо 30 секунд після старту перед першою перевіркою
     await asyncio.sleep(30)
-
-    # Виводимо інформацію про APP_URL для діагностики
-    logger.info(f"Keep-alive буде пінгувати URL: {APP_URL}")
 
     while True:
         current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         try:
-            # Якщо APP_URL не встановлено в режимі Render, спробуємо самостійно побудувати URL
-            ping_url = APP_URL
-            if not ping_url and "RENDER" in os.environ:
-                # Спроба сконструювати URL з інформації про Render
-                render_service = os.environ.get("RENDER_SERVICE_NAME", "")
-                if render_service:
-                    ping_url = f"https://anonymbot-n1ms.onrender.com/"
-                    logger.info(f"Сконструйовано URL: {ping_url}")
+            # Отримуємо поточну кількість повідомлень
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM messages")
+            current_count = cursor.fetchone()[0]
+            cursor.close()
+            conn.close()
 
-            if not ping_url:
-                logger.warning(f"[{current_time}] Не вдалося визначити URL для пінгу. Пропускаю.")
-                await asyncio.sleep(600)  # 10 хвилин
-                continue
+            # Перевіряємо чи є зміни
+            if last_message_count is None:
+                # Перший запуск
+                logger.info(f"[{current_time}] Перша перевірка: {current_count} повідомлень в базі")
+                last_message_count = current_count
+            elif current_count > last_message_count:
+                # Є нові повідомлення
+                logger.info(f"[{current_time}] Зміни є: +{current_count - last_message_count} нових повідомлень")
+                last_message_count = current_count
+            else:
+                # Змін немає
+                logger.info(f"[{current_time}] Змін немає: все ще {current_count} повідомлень")
 
-            # Додаємо шлях /health до URL, якщо потрібно
-            if not ping_url.endswith("/health"):
-                ping_url = f"{ping_url.rstrip('/')}/health"
-
-            # Встановлюємо таймаут для запиту, щоб уникнути зависання
-            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session:
-                logger.info(f"[{current_time}] Пінгую: {ping_url}")
-                async with session.get(ping_url) as response:
-                    if response.status == 200:
-                        logger.info(f"[{current_time}] Ping успішний: статус {response.status}")
-                    else:
-                        logger.warning(f"[{current_time}] Ping повернув статус: {response.status}")
-
-        except aiohttp.ClientConnectorError as e:
-            # Специфічна помилка з'єднання
-            logger.error(f"[{current_time}] Помилка з'єднання при пінгу: {str(e)}")
-        except aiohttp.ClientError as e:
-            # Загальні помилки клієнта
-            logger.error(f"[{current_time}] Помилка HTTP клієнта: {str(e)}")
-        except asyncio.TimeoutError:
-            logger.error(f"[{current_time}] Timeout при виконанні пінгу")
         except Exception as e:
-            logger.error(f"[{current_time}] Непередбачена помилка: {str(e)}")
+            # Якщо сталася помилка при перевірці
+            logger.error(f"[{current_time}] Помилка при перевірці змін: {str(e)}")
 
-        # Чекаємо 10 хвилин перед наступним пінгом
-        # Render зазвичай "засинає" після 15 хвилин неактивності
+        # Чекаємо 10 хвилин перед наступною перевіркою
         await asyncio.sleep(600)  # 600 секунд = 10 хвилин
 
 
