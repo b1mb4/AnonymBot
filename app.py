@@ -1,13 +1,16 @@
 import os
 import sqlite3
 import secrets
-from fastapi import FastAPI, Request, HTTPException, Header, Depends
+import asyncio
+import aiohttp
+from fastapi import FastAPI, Request, HTTPException, Header, Depends, BackgroundTasks
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 import logging
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Optional
+from datetime import datetime
 
 # Налаштування логування
 logging.basicConfig(level=logging.INFO)
@@ -18,6 +21,9 @@ os.makedirs("static", exist_ok=True)
 os.makedirs("templates", exist_ok=True)
 
 API_KEY = os.environ.get("API_KEY", "AKe5Df9cB7zX2pQr8tYw3mVn6uJh4gLs")
+
+# Отримання URL додатку з середовища або встановлення стандартного для локального тестування
+APP_URL = os.environ.get("APP_URL", "http://localhost:8000")
 
 # Ініціалізація FastAPI
 app = FastAPI()
@@ -103,6 +109,37 @@ except Exception as e:
     logger.error(f"Помилка при ініціалізації бази даних: {e}")
 
 
+# Функція для підтримки активності сервера
+async def keep_alive():
+    """Функція для підтримки активності сервера, запускається в фоні"""
+    while True:
+        try:
+            # Пінгуємо наш власний /health ендпоінт
+            async with aiohttp.ClientSession() as session:
+                ping_url = f"{APP_URL}/health"
+                async with session.get(ping_url) as response:
+                    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    if response.status == 200:
+                        logger.info(f"[{current_time}] Ping успішний: {ping_url}, статус: {response.status}")
+                    else:
+                        logger.warning(f"[{current_time}] Ping невдалий: {ping_url}, статус: {response.status}")
+        except Exception as e:
+            current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            logger.error(f"[{current_time}] Помилка при виконанні ping: {str(e)}")
+
+        # Чекаємо 10 хвилин перед наступним пінгом
+        # Render зазвичай "засинає" після 15 хвилин неактивності
+        await asyncio.sleep(600)  # 600 секунд = 10 хвилин
+
+
+# Запуск фонового завдання при старті додатку
+@app.on_event("startup")
+async def startup_event():
+    # Запускаємо keep_alive в фоні
+    asyncio.create_task(keep_alive())
+    logger.info("Запущено фонове завдання підтримки активності")
+
+
 @app.get("/", response_class=HTMLResponse)
 def read_messages(request: Request):
     """Повертає HTML-сторінку"""
@@ -182,6 +219,29 @@ async def add_message(message: dict):
 @app.get("/health")
 def health_check():
     return {"status": "ok", "version": "1.0"}
+
+
+# Ручний тригер для пінгу (може використовуватись для тестування)
+@app.get("/manual-ping")
+async def manual_ping(background_tasks: BackgroundTasks, api_key: str = Depends(verify_api_key)):
+    """Ручний тригер для пінгу з аутентифікацією API ключем (для тестування)"""
+    background_tasks.add_task(ping_health_once)
+    return {"message": "Ping запущено в фоні"}
+
+
+async def ping_health_once():
+    """Виконати один пінг ендпоінту /health"""
+    try:
+        async with aiohttp.ClientSession() as session:
+            ping_url = f"{APP_URL}/health"
+            async with session.get(ping_url) as response:
+                current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                logger.info(f"[{current_time}] Ручний ping: {ping_url}, статус: {response.status}")
+                return {"status": response.status}
+    except Exception as e:
+        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        logger.error(f"[{current_time}] Помилка ручного ping: {str(e)}")
+        return {"error": str(e)}
 
 
 # Для Render порт буде отримано з системних змінних
