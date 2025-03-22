@@ -48,39 +48,50 @@ function applyTelegramTheme() {
     }
 }
 
-// Форматування дати
+// Форматування дати з врахуванням локального часового поясу користувача
 function formatDate(dateString) {
     if (!dateString) return '';
 
-    const date = new Date(dateString);
-    if (isNaN(date.getTime())) return '';
+    try {
+        // Створюємо об'єкт дати
+        const date = new Date(dateString);
+        if (isNaN(date.getTime())) return '';
 
-    const now = new Date();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
+        // Отримуємо поточну дату в локальному часовому поясі
+        const now = new Date();
+        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const yesterday = new Date(today);
+        yesterday.setDate(yesterday.getDate() - 1);
 
-    // Форматування часу (години:хвилини)
-    const hours = String(date.getHours()).padStart(2, '0');
-    const minutes = String(date.getMinutes()).padStart(2, '0');
-    const timeString = `${hours}:${minutes}`;
+        // Форматування часу (години:хвилини)
+        const hours = String(date.getHours()).padStart(2, '0');
+        const minutes = String(date.getMinutes()).padStart(2, '0');
+        const timeString = `${hours}:${minutes}`;
 
-    // Якщо сьогодні
-    if (date >= today) {
-        return `Сьогодні, ${timeString}`;
+        // Якщо сьогодні
+        if (date.getDate() === today.getDate() &&
+            date.getMonth() === today.getMonth() &&
+            date.getFullYear() === today.getFullYear()) {
+            return `Сьогодні, ${timeString}`;
+        }
+
+        // Якщо вчора
+        if (date.getDate() === yesterday.getDate() &&
+            date.getMonth() === yesterday.getMonth() &&
+            date.getFullYear() === yesterday.getFullYear()) {
+            return `Вчора, ${timeString}`;
+        }
+
+        // Інакше повна дата
+        const day = String(date.getDate()).padStart(2, '0');
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const year = date.getFullYear();
+
+        return `${day}.${month}.${year}, ${timeString}`;
+    } catch (e) {
+        console.error("Помилка форматування дати:", e);
+        return dateString || '';
     }
-
-    // Якщо вчора
-    if (date >= yesterday) {
-        return `Вчора, ${timeString}`;
-    }
-
-    // Інакше повна дата
-    const day = String(date.getDate()).padStart(2, '0');
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const year = date.getFullYear();
-
-    return `${day}.${month}.${year}, ${timeString}`;
 }
 
 // Оновлення повідомлень
@@ -173,4 +184,4 @@ function updateMessages() {
 }
 
 // Додавання періодичного оновлення
-setInterval(updateMessages, 30000); // Оновлюємо кожні 30 секунд замість 10
+setInterval(updateMessages, 30000); // Оновлюємо кожні 30 секунд

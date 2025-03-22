@@ -213,6 +213,11 @@ async def keep_alive():
         await asyncio.sleep(600)  # 600 секунд = 10 хвилин
 
 
+@app.head("/")
+def head_root():
+    """Обробляє HEAD запит до кореневого шляху"""
+    return {}  # Повертаємо порожній словник без тіла
+
 @app.get("/", response_class=HTMLResponse)
 def read_messages(request: Request):
     """Повертає HTML-сторінку"""
