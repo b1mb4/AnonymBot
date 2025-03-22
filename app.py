@@ -20,6 +20,24 @@ logger = logging.getLogger(__name__)
 os.makedirs("static", exist_ok=True)
 os.makedirs("templates", exist_ok=True)
 
+# Директорія для бази даних
+# На Render доступні для запису каталоги /tmp та /var/data
+# /var/data зберігається між деплоями, а /tmp очищається
+DATA_DIR = os.environ.get("DATA_DIR", "/var/data")
+if not os.path.exists(DATA_DIR):
+    # Якщо ми не на Render або директорія не існує, використовуємо поточний каталог
+    DATA_DIR = os.getcwd()
+    # Створюємо директорію data, якщо вона не існує
+    data_path = os.path.join(DATA_DIR, "data")
+    os.makedirs(data_path, exist_ok=True)
+    DATA_DIR = data_path
+
+# Максимальна кількість повідомлень для зберігання
+MAX_MESSAGES = 50
+
+logger.info(f"Використовуємо директорію для даних: {DATA_DIR}")
+logger.info(f"Максимальна кількість повідомлень: {MAX_MESSAGES}")
+
 API_KEY = os.environ.get("API_KEY", "AKe5Df9cB7zX2pQr8tYw3mVn6uJh4gLs")
 
 # Отримання URL додатку з середовища або встановлення стандартного для локального тестування
@@ -56,11 +74,39 @@ def verify_api_key(x_api_key: Optional[str] = Header(None)):
 
 # Функція для підключення до бази даних
 def get_db_connection():
-    # Створюємо базу в тимчасовому каталозі, який доступний для запису на Render
-    db_path = os.path.join("/tmp", "messages.db")
+    # Використовуємо постійну директорію на Render
+    db_path = os.path.join(DATA_DIR, "messages.db")
     conn = sqlite3.connect(db_path, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     return conn
+
+
+# Функція для видалення найстаріших повідомлень
+def enforce_message_limit(conn):
+    """Видаляє найстаріші повідомлення, якщо їх кількість перевищує MAX_MESSAGES"""
+    cursor = conn.cursor()
+
+    # Отримуємо загальну кількість повідомлень
+    cursor.execute("SELECT COUNT(*) FROM messages")
+    count = cursor.fetchone()[0]
+
+    # Якщо кількість повідомлень перевищує ліміт
+    if count > MAX_MESSAGES:
+        # Кількість повідомлень, які потрібно видалити
+        to_delete = count - MAX_MESSAGES
+        logger.info(f"Видаляємо {to_delete} найстаріших повідомлень для дотримання ліміту в {MAX_MESSAGES}")
+
+        # Видаляємо найстаріші повідомлення (з найменшими id)
+        cursor.execute("DELETE FROM messages WHERE id IN (SELECT id FROM messages ORDER BY id ASC LIMIT ?)",
+                       (to_delete,))
+        conn.commit()
+
+        # Перевіряємо, скільки було видалено
+        cursor.execute("SELECT COUNT(*) FROM messages")
+        new_count = cursor.fetchone()[0]
+        logger.info(f"Після видалення залишилося {new_count} повідомлень")
+
+    cursor.close()
 
 
 # Ініціалізація бази даних
@@ -84,6 +130,7 @@ def init_db():
     count = cursor.fetchone()[0]
 
     if count == 0:
+        logger.info("База даних порожня, додаємо тестові повідомлення")
         test_messages = [
             "Привіт! Це перше анонімне повідомлення.",
             "Мені дуже подобається цей бот!",
@@ -97,16 +144,29 @@ def init_db():
 
         conn.commit()
         logger.info(f"Додано {len(test_messages)} тестових повідомлень")
+    else:
+        logger.info(f"База даних вже містить {count} повідомлень")
+
+        # Перевіряємо, чи не перевищено ліміт і видаляємо зайві повідомлення
+        enforce_message_limit(conn)
 
     cursor.close()
     conn.close()
 
 
 # Ініціалізація бази даних при запуску
-try:
-    init_db()
-except Exception as e:
-    logger.error(f"Помилка при ініціалізації бази даних: {e}")
+@app.on_event("startup")
+async def startup_event():
+    try:
+        # Ініціалізуємо базу даних
+        init_db()
+        logger.info("База даних ініціалізована успішно")
+
+        # Запускаємо keep_alive в фоні
+        asyncio.create_task(keep_alive())
+        logger.info("Запущено фонове завдання підтримки активності")
+    except Exception as e:
+        logger.error(f"Помилка при ініціалізації: {e}")
 
 
 # Проста функція для підтримки активності сервера
@@ -153,14 +213,6 @@ async def keep_alive():
         await asyncio.sleep(600)  # 600 секунд = 10 хвилин
 
 
-# Запуск фонового завдання при старті додатку
-@app.on_event("startup")
-async def startup_event():
-    # Запускаємо keep_alive в фоні
-    asyncio.create_task(keep_alive())
-    logger.info("Запущено фонове завдання підтримки активності")
-
-
 @app.get("/", response_class=HTMLResponse)
 def read_messages(request: Request):
     """Повертає HTML-сторінку"""
@@ -201,13 +253,17 @@ async def add_bot_message(message: dict, api_key: str = Depends(verify_api_key))
         cursor = conn.cursor()
 
         cursor.execute("INSERT INTO messages (text, user_id) VALUES (?, ?)", (text, user_id))
+        message_id = cursor.lastrowid
+
+        # Перевіряємо ліміт повідомлень і видаляємо зайві, якщо потрібно
+        enforce_message_limit(conn)
 
         conn.commit()
         cursor.close()
         conn.close()
 
         logger.info(f"Додано нове повідомлення від бота (user_id: {user_id})")
-        return {"success": True, "message_id": cursor.lastrowid}
+        return {"success": True, "message_id": message_id}
     except Exception as e:
         logger.error(f"Помилка при додаванні повідомлення від бота: {e}")
         return {"success": False, "error": str(e)}
@@ -225,12 +281,17 @@ async def add_message(message: dict):
         cursor = conn.cursor()
 
         cursor.execute("INSERT INTO messages (text) VALUES (?)", (text,))
+        message_id = cursor.lastrowid
+
+        # Перевіряємо ліміт повідомлень і видаляємо зайві, якщо потрібно
+        enforce_message_limit(conn)
 
         conn.commit()
         cursor.close()
         conn.close()
 
-        return {"success": True}
+        logger.info(f"Додано нове повідомлення з веб-інтерфейсу")
+        return {"success": True, "message_id": message_id}
     except Exception as e:
         logger.error(f"Помилка при додаванні повідомлення: {e}")
         return {"success": False, "error": str(e)}
@@ -239,7 +300,24 @@ async def add_message(message: dict):
 # Ендпоінт для перевірки статусу
 @app.get("/health")
 def health_check():
-    return {"status": "ok", "version": "1.0"}
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM messages")
+        count = cursor.fetchone()[0]
+        cursor.close()
+        conn.close()
+
+        return {
+            "status": "ok",
+            "version": "1.0",
+            "message_count": count,
+            "max_messages": MAX_MESSAGES,
+            "data_dir": DATA_DIR
+        }
+    except Exception as e:
+        logger.error(f"Помилка при перевірці статусу: {e}")
+        return {"status": "error", "error": str(e)}
 
 
 # Ручний тригер для пінгу (може використовуватись для тестування)
@@ -248,6 +326,51 @@ async def manual_ping(background_tasks: BackgroundTasks, api_key: str = Depends(
     """Ручний тригер для пінгу з аутентифікацією API ключем (для тестування)"""
     background_tasks.add_task(ping_health_once)
     return {"message": "Ping запущено в фоні"}
+
+
+# Ендпоінт для отримання статистики
+@app.get("/stats")
+def get_stats(api_key: str = Depends(verify_api_key)):
+    """Отримує статистику по повідомленнях (захищено API ключем)"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Загальна кількість повідомлень
+        cursor.execute("SELECT COUNT(*) FROM messages")
+        total_count = cursor.fetchone()[0]
+
+        # Кількість повідомлень за останні 24 години
+        cursor.execute("SELECT COUNT(*) FROM messages WHERE timestamp > datetime('now', '-1 day')")
+        last_24h_count = cursor.fetchone()[0]
+
+        # Кількість унікальних користувачів (якщо є user_id)
+        cursor.execute("SELECT COUNT(DISTINCT user_id) FROM messages WHERE user_id IS NOT NULL")
+        unique_users = cursor.fetchone()[0]
+
+        # Перше і останнє повідомлення
+        cursor.execute("SELECT timestamp FROM messages ORDER BY id ASC LIMIT 1")
+        first_message = cursor.fetchone()
+        first_message_time = first_message[0] if first_message else None
+
+        cursor.execute("SELECT timestamp FROM messages ORDER BY id DESC LIMIT 1")
+        last_message = cursor.fetchone()
+        last_message_time = last_message[0] if last_message else None
+
+        cursor.close()
+        conn.close()
+
+        return {
+            "total_messages": total_count,
+            "last_24h_messages": last_24h_count,
+            "unique_users": unique_users,
+            "max_messages": MAX_MESSAGES,
+            "first_message_time": first_message_time,
+            "last_message_time": last_message_time
+        }
+    except Exception as e:
+        logger.error(f"Помилка при отриманні статистики: {e}")
+        return {"status": "error", "error": str(e)}
 
 
 async def ping_health_once():
