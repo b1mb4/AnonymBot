@@ -48,44 +48,44 @@ function applyTelegramTheme() {
     }
 }
 
-// Форматування дати з врахуванням локального часового поясу користувача
+// Форматування дати з врахуванням часового поясу України (GMT+2)
 function formatDate(dateString) {
     if (!dateString) return '';
 
     try {
         // Створюємо об'єкт дати
-        const date = new Date(dateString);
-        if (isNaN(date.getTime())) return '';
+        const utcDate = new Date(dateString);
+        if (isNaN(utcDate.getTime())) return '';
 
-        // Отримуємо поточну дату в локальному часовому поясі
+        // Конвертуємо UTC в GMT+2 (додаємо 2 години)
+        const localDate = new Date(utcDate.getTime() + (2 * 60 * 60 * 1000));
+
+        // Поточна дата у GMT+2
         const now = new Date();
-        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const nowGmt2 = new Date(now.getTime() + (2 * 60 * 60 * 1000));
+        const today = new Date(nowGmt2.getFullYear(), nowGmt2.getMonth(), nowGmt2.getDate());
         const yesterday = new Date(today);
         yesterday.setDate(yesterday.getDate() - 1);
 
         // Форматування часу (години:хвилини)
-        const hours = String(date.getHours()).padStart(2, '0');
-        const minutes = String(date.getMinutes()).padStart(2, '0');
+        const hours = String(localDate.getUTCHours()).padStart(2, '0');
+        const minutes = String(localDate.getUTCMinutes()).padStart(2, '0');
         const timeString = `${hours}:${minutes}`;
 
         // Якщо сьогодні
-        if (date.getDate() === today.getDate() &&
-            date.getMonth() === today.getMonth() &&
-            date.getFullYear() === today.getFullYear()) {
+        if (localDate >= today) {
             return `Сьогодні, ${timeString}`;
         }
 
         // Якщо вчора
-        if (date.getDate() === yesterday.getDate() &&
-            date.getMonth() === yesterday.getMonth() &&
-            date.getFullYear() === yesterday.getFullYear()) {
+        if (localDate >= yesterday) {
             return `Вчора, ${timeString}`;
         }
 
         // Інакше повна дата
-        const day = String(date.getDate()).padStart(2, '0');
-        const month = String(date.getMonth() + 1).padStart(2, '0');
-        const year = date.getFullYear();
+        const day = String(localDate.getUTCDate()).padStart(2, '0');
+        const month = String(localDate.getUTCMonth() + 1).padStart(2, '0');
+        const year = localDate.getUTCFullYear();
 
         return `${day}.${month}.${year}, ${timeString}`;
     } catch (e) {
@@ -160,9 +160,11 @@ function updateMessages() {
             const statusElement = document.querySelector('.status-message');
             if (statusElement) {
                 const now = new Date();
-                const hours = String(now.getHours()).padStart(2, '0');
-                const minutes = String(now.getMinutes()).padStart(2, '0');
-                const seconds = String(now.getSeconds()).padStart(2, '0');
+                // Додаємо 2 години для GMT+2
+                const localNow = new Date(now.getTime() + (2 * 60 * 60 * 1000));
+                const hours = String(localNow.getUTCHours()).padStart(2, '0');
+                const minutes = String(localNow.getUTCMinutes()).padStart(2, '0');
+                const seconds = String(localNow.getUTCSeconds()).padStart(2, '0');
                 statusElement.textContent = `Оновлено о ${hours}:${minutes}:${seconds}`;
             }
         })
